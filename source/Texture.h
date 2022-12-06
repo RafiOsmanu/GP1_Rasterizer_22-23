@@ -2,6 +2,7 @@
 #include <SDL_surface.h>
 #include <string>
 #include "ColorRGB.h"
+#include<memory>
 
 namespace dae
 {
@@ -12,11 +13,11 @@ namespace dae
 	public:
 		~Texture();
 
-		static Texture* LoadFromFile(const std::string& path);
+		static std::unique_ptr<Texture> LoadFromFile(const std::string& path);
 		ColorRGB Sample(const Vector2& uv) const;
+		Texture(SDL_Surface* pSurface);
 
 	private:
-		Texture(SDL_Surface* pSurface);
 
 		SDL_Surface* m_pSurface{ nullptr };
 		uint32_t* m_pSurfacePixels{ nullptr };

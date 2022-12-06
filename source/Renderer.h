@@ -6,6 +6,9 @@
 #include "Camera.h"
 #include "DataTypes.h"
 
+#include <memory>
+
+
 struct SDL_Window;
 struct SDL_Surface;
 
@@ -32,13 +35,15 @@ namespace dae
 		void Render();
 
 		bool SaveBufferToImage() const;
+		SDL_Window* m_pWindow{};
 
 	private:
-		SDL_Window* m_pWindow{};
 
 		SDL_Surface* m_pFrontBuffer{ nullptr };
 		SDL_Surface* m_pBackBuffer{ nullptr };
 		uint32_t* m_pBackBufferPixels{};
+
+		std::unique_ptr<Texture> m_pSurfaceTexture{ nullptr };
 
 		float* m_pDepthBufferPixels{};
 
@@ -48,10 +53,11 @@ namespace dae
 		int m_Height{};
 		std::vector<Vector3> m_Veritces_ScreenSpace;
 		//std::vector<Vertex> m_Veritces_world;
+		float m_AspectRatio;
 		
 
 		//Function that transforms the vertices from the mesh from World space to Screen space
-		void VertexTransformationFunction(const std::vector<Vertex>& vertices_in, std::vector<Vertex>& vertices_out) const; //W1 Version
+		void VertexTransformationFunction(Mesh& mesh) const; //W1 Version
 		bool IsInTriangle(const std::vector<Vector2>& verticesScreenspace, const Vector2& pixelPos);
 		void render_W1_Part1();
 		void render_W1_Part2();
@@ -61,7 +67,10 @@ namespace dae
 
 		void render_W2_Part1();
 
+		void render_W3_Part1();
+
 		void BoundingBox(Vector2& topLeft, Vector2& bottomRight, std::vector<Vector2> v);
+		
 
 	};
 }
