@@ -56,4 +56,24 @@ namespace dae
 
 		return { r * colorRemap, g * colorRemap, b * colorRemap };
 	}
+
+	Vector3 Texture::SampleNormal(const Vector2& uv) const
+	{
+		//TODO
+		//Sample the correct texel for the given uv
+		Uint8 r, g, b;
+
+		const Uint32 U{ static_cast<Uint32>(uv.x * m_pSurface->w) };
+		const Uint32 V{ static_cast<Uint32>(uv.y * m_pSurface->h) };
+
+
+		const Uint32 pixel{ m_pSurfacePixels[static_cast<Uint32>(U + (V * m_pSurface->w))] };
+
+		SDL_GetRGB(pixel, m_pSurface->format, &r, &g, &b);
+
+		const float colorRemap{ 1 / 255.f };
+
+
+		return { r * colorRemap, g * colorRemap, b * colorRemap };
+	}
 }

@@ -26,10 +26,17 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	m_pBackBuffer = SDL_CreateRGBSurface(0, m_Width, m_Height, 32, 0, 0, 0, 0);
 	m_pBackBufferPixels = (uint32_t*)m_pBackBuffer->pixels;
 	m_AspectRatio = float(m_Width) / float(m_Height);
+	m_IsMeshLoadedIn = false;
 
 	//Initialize Camera
-	m_Camera.Initialize(60.f, { .0f,.0f,-10.f }, m_AspectRatio);
+	m_Camera.Initialize(60.f, { .0f, 5.f,-30.f }, m_AspectRatio);
 
+	//loadTexture
+	m_pDiffuseTexture = Texture::LoadFromFile("Resources/vehicle_diffuse.png");
+
+	m_pNormalTexture = Texture::LoadFromFile("Resources/vehicle_normal.png");
+
+	Utils::ParseOBJ("Resources/vehicle.obj", m_Meshes[0].vertices, m_Meshes[0].indices);
 	
 
 
@@ -43,6 +50,8 @@ Renderer::~Renderer()
 void Renderer::Update(Timer* pTimer)
 {
 	m_Camera.Update(pTimer);
+
+	RotateMesh(pTimer);
 }
 
 void Renderer::Render()
@@ -64,9 +73,11 @@ void Renderer::Render()
 	//render_W1_Part2(); //projection stage
 	//render_W1_Part3(); //barycentric coordinates
 	//render_W1_Part4(); //Depth Buffer
-	//render_W1_Part5();//optimization
-	//render_W2_Part1();//Quads
-	render_W3_Part1();//matrix
+	//render_W1_Part5(); //optimization
+	//render_W2_Part1(); //Quads
+	//render_W3_Part1(); //matrix
+	//render_W3_Part2(); //tuc tuc
+	render_W4_Part1();  //PixelShading
 
 
 
@@ -81,32 +92,33 @@ void Renderer::Render()
 void Renderer::VertexTransformationFunction(Mesh& mesh) const
 {
 	//Todo > W1 Projection Stage
-	Matrix viewProjectionMatrix;
+	Matrix worldViewProjectionMatrix;
+	Matrix WorldMatrix{ mesh.worldMatrix };
 	//vertices_out = vertices_in;
 	for (auto& vertexOut : mesh.vertices)
 	{
-		viewProjectionMatrix = mesh.worldMatrix * m_Camera.viewProjectionMatrix;
+		worldViewProjectionMatrix = mesh.worldMatrix * m_Camera.viewProjectionMatrix;
 
-		Vector4 newVertex{vertexOut.position.x, vertexOut.position.y, vertexOut.position.z, 1 };
-		//to viewSpace
-		newVertex = viewProjectionMatrix.TransformPoint(newVertex);
+		//Vector4 newVertex{vertexOut.position.x, vertexOut.position.y, vertexOut.position.z, 1 };
+		Vertex_Out newVertexOut
+		{
+			worldViewProjectionMatrix.TransformPoint({vertexOut.position, 1.f}),
+			vertexOut.color,
+			vertexOut.uv,
+			mesh.worldMatrix.TransformVector(vertexOut.normal).Normalized(),
+			mesh.worldMatrix.TransformVector(vertexOut.tangent).Normalized(),
+		};
 
 		//perspective divide
-		newVertex.x /= newVertex.w;
-		newVertex.y /= newVertex.w;
-		newVertex.z /= newVertex.w;
-		newVertex.w = newVertex.w;
-		
-		//screenSpace
-		newVertex.x = (newVertex.x + 1) / 2 * float(m_Width);
-		newVertex.y = (1 - newVertex.y) / 2 * float(m_Height);
-
-		Vertex_Out newVertexOut{ newVertex, vertexOut.color, vertexOut.uv };
+		newVertexOut.position.x /= newVertexOut.position.w;
+		newVertexOut.position.y /= newVertexOut.position.w;
+		newVertexOut.position.z /= newVertexOut.position.w;
+		newVertexOut.position.w = newVertexOut.position.w;
 
 		mesh.vertices_out.emplace_back(newVertexOut);
 
-
 	}
+	
 }
 
 bool dae::Renderer::IsInTriangle(const std::vector<Vector2>& verticesScreenspace, const Vector2& pixelPos)
@@ -179,7 +191,7 @@ void dae::Renderer::render_W1_Part1()
 		}
 	}
 
-}
+} 
 
 void dae::Renderer::render_W1_Part2()
 {
@@ -653,7 +665,7 @@ void dae::Renderer::render_W2_Part1()
 void dae::Renderer::render_W3_Part1()
 {
 	//loadTexture
-	m_pSurfaceTexture = Texture::LoadFromFile("Resources/uv_grid_2.png");
+	m_pDiffuseTexture = Texture::LoadFromFile("Resources/uv_grid_2.png");
 
 	//triangle worldSpace
 	std::vector<Mesh> Meshes =
@@ -682,51 +694,39 @@ void dae::Renderer::render_W3_Part1()
 		}
 	};
 
+	//transform vector to display on your screen
 	VertexTransformationFunction(Meshes[0]);
+
 	
-	//vertices_out
-	std::vector<Vertex_Out> veritces_Out{};
 
-	switch (Meshes[0].primitiveTopology)
+	int adder{};
+	if (Meshes[0].primitiveTopology == PrimitiveTopology::TriangleList)
 	{
-	case PrimitiveTopology::TriangleList:
-
-		for (int i{}; i < Meshes[0].indices.size(); ++i)
-		{
-			veritces_Out.push_back(Meshes[0].vertices_out[Meshes[0].indices[i]]);
-		}
-		break;
-	case PrimitiveTopology::TriangleStrip:
-
-		for (int i{}; i < Meshes[0].indices.size() - 2; ++i)
-		{
-			veritces_Out.push_back(Meshes[0].vertices_out[Meshes[0].indices[i]]);
-			if (i % 2 != 0)
-			{
-				veritces_Out.push_back(Meshes[0].vertices_out[Meshes[0].indices[i + 2]]);
-				veritces_Out.push_back(Meshes[0].vertices_out[Meshes[0].indices[i + 1]]);
-
-
-			}
-			else
-			{
-				veritces_Out.push_back(Meshes[0].vertices_out[Meshes[0].indices[i + 1]]);
-				veritces_Out.push_back(Meshes[0].vertices_out[Meshes[0].indices[i + 2]]);
-			}
-		}
-		break;
+		adder = 3;
+	}
+	else
+	{
+		adder = 1;
 	}
 
 	//int count{};
-	for (int i{}; i < veritces_Out.size(); i += 3)
+	for (int i{}; i < Meshes[0].indices.size() - 2; i += adder)
 	{
-		int indc0{ i };
-		int indc1{ i + 1 };
-		int indc2{ i + 2 };
+
+		
+
+		uint32_t indc0{ Meshes[0].indices[i]};
+		uint32_t indc1{ Meshes[0].indices[i + 1] };
+		uint32_t indc2{ Meshes[0].indices[i + 2] };
+
+		if (Meshes[0].primitiveTopology == PrimitiveTopology::TriangleStrip && i & 2 != 0)
+		{
+			std::swap(indc1, indc2);
+		}
 		//cach vertices
-		const Vector2 v0{ veritces_Out[indc0].position.x, veritces_Out[indc0].position.y };
-		const Vector2 v1{ veritces_Out[indc1].position.x, veritces_Out[indc1].position.y };
-		const Vector2 v2{ veritces_Out[indc2].position.x, veritces_Out[indc2].position.y };
+		const Vector2 v0{ Meshes[0].vertices_out[indc0].position.x, Meshes[0].vertices_out[indc0].position.y };
+		const Vector2 v1{Meshes[0].vertices_out[indc1].position.x, Meshes[0].vertices_out[indc1].position.y };
+		const Vector2 v2{Meshes[0].vertices_out[indc2].position.x, Meshes[0].vertices_out[indc2].position.y };
 
 		//vertices 2D
 		std::vector<Vector2> vertices{};
@@ -748,12 +748,13 @@ void dae::Renderer::render_W3_Part1()
 				Vector2 currentPixel = { static_cast<float>(px) + 0.5f, static_cast<float>(py) + 0.5f };
 
 				float weight0 = 0, weight1 = 0, weight2 = 0;
+				float triangleSide0 = 0, triangleSide1 = 0, triangleSide2 = 0;
 				float area{ Vector2::Cross((v1 - v0), (v2 - v0)) };
 
 				//calculate weights
-				weight0 = Vector2::Cross(v2 - v1, (currentPixel - v1)) / area;
-				weight1 = Vector2::Cross(v0 - v2, (currentPixel - v2)) / area;
-				weight2 = Vector2::Cross(v1 - v0, (currentPixel - v0)) / area;
+				weight0 = triangleSide0 = Vector2::Cross(v2 - v1, (currentPixel - v1)) / area;
+				weight1 = triangleSide1 = Vector2::Cross(v0 - v2, (currentPixel - v2)) / area;
+				weight2 = triangleSide2 = Vector2::Cross(v1 - v0, (currentPixel - v0)) / area;
 
 				float totalTriangleWeight{ weight0 + weight1 + weight2 };
 				float invTotalTriangleWeight{ 1 / totalTriangleWeight };
@@ -766,45 +767,66 @@ void dae::Renderer::render_W3_Part1()
 
 				//interpolatedZ
 				float interpolatedZ =
-					1 / ((1 / veritces_Out[indc0].position.z) * weight0 +
-						(1 / veritces_Out[indc1].position.z) * weight1 +
-						(1 / veritces_Out[indc2].position.z) * weight2);
+					1 / ((1 / Meshes[0].vertices_out[indc0].position.z) * weight0 +
+						(1 / Meshes[0].vertices_out[indc1].position.z) * weight1 +
+						(1 / Meshes[0].vertices_out[indc2].position.z) * weight2);
 
 
-				//Depth
-				Vector3 depth{};
-				depth = weight0 * veritces_Out[indc0].position +
-					weight1 * veritces_Out[indc1].position +
-					weight2 * veritces_Out[indc2].position;
+				//interpolatedW
+				float interpolatedW =
+					1 / ((1 / Meshes[0].vertices_out[indc0].position.w) * weight0 +
+						(1 / Meshes[0].vertices_out[indc1].position.w) * weight1 +
+						(1 / Meshes[0].vertices_out[indc2].position.w) * weight2);
 
-				bool isInTriangleBounds = IsInTriangle(vertices, currentPixel);
 
-				if (isInTriangleBounds)
+				////Depth
+				//float depth{};
+				//depth = weight0 * Meshes[0].vertices_out[indc0].position.w +
+				//	weight1 * Meshes[0].vertices_out[indc1].position.w +
+				//	weight2 * Meshes[0].vertices_out[indc2].position.w;
+
+
+
+				//isInTriangleCheck
+				if (triangleSide0 < 0) continue;
+				if (triangleSide1 < 0) continue;
+				if (triangleSide2 < 0) continue;
+
+				
+				Vector2 interpolatedUv =
+					((Meshes[0].vertices_out[indc0].uv / Meshes[0].vertices_out[indc0].position.w) * weight0
+						+ (Meshes[0].vertices_out[indc1].uv / Meshes[0].vertices_out[indc1].position.w) * weight1
+						+ (Meshes[0].vertices_out[indc2].uv / Meshes[0].vertices_out[indc2].position.w) * weight2) * interpolatedW;
+
+
+				ColorRGB sampledColor = m_pDiffuseTexture->Sample(interpolatedUv);
+
+				//sample pixel color
+				switch (m_ColorOutput)
 				{
-					Vector2 interpolatedUv =
-						((veritces_Out[indc0].uv / veritces_Out[indc0].position.z) * weight0
-							+ (veritces_Out[indc1].uv / veritces_Out[indc1].position.z) * weight1
-							+ (veritces_Out[indc2].uv / veritces_Out[indc2].position.z) * weight2) * interpolatedZ;
-
-					//sample pixel color
-					ColorRGB sampledColor = m_pSurfaceTexture->Sample(interpolatedUv);
-
+				case 0:
 					finalColor = { sampledColor };
-
-					if (depth.z < m_pDepthBufferPixels[(py * m_Width) + px])
-					{
-
-						m_pDepthBufferPixels[(py * m_Width) + px] = depth.z;
-
-						//Update Color in Buffer
-						finalColor.MaxToOne();
-
-						m_pBackBufferPixels[px + (py * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
-							static_cast<uint8_t>(finalColor.r * 255),
-							static_cast<uint8_t>(finalColor.g * 255),
-							static_cast<uint8_t>(finalColor.b * 255));
-					}
+					break;
+				case 1:
+					finalColor = { interpolatedZ, interpolatedZ, interpolatedZ };
+					break;
 				}
+
+
+				if (interpolatedZ < m_pDepthBufferPixels[(py * m_Width) + px])
+				{
+
+					m_pDepthBufferPixels[(py * m_Width) + px] = interpolatedZ;
+
+					//Update Color in Buffer
+					finalColor.MaxToOne();
+
+					m_pBackBufferPixels[px + (py * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
+						static_cast<uint8_t>(finalColor.r * 255),
+						static_cast<uint8_t>(finalColor.g * 255),
+						static_cast<uint8_t>(finalColor.b * 255));
+				}
+				
 
 			}
 		}
@@ -812,7 +834,362 @@ void dae::Renderer::render_W3_Part1()
 
 }
 
+void dae::Renderer::render_W3_Part2()
+{
+	//clear global mesh variable
+	m_Meshes[0].vertices_out.clear();
 
+
+	//transform vector to display on your screen
+	VertexTransformationFunction(m_Meshes[0]);
+
+
+
+
+	int adder{};
+	if (m_Meshes[0].primitiveTopology == PrimitiveTopology::TriangleList)
+	{
+		adder = 3;
+	}
+	else
+	{
+		adder = 1;
+	}
+
+	//int count{};
+	for (int i{}; i < m_Meshes[0].indices.size(); i += adder)
+	{
+
+
+
+		uint32_t indc0{ m_Meshes[0].indices[i] };
+		uint32_t indc1{ m_Meshes[0].indices[i + 1] };
+		uint32_t indc2{ m_Meshes[0].indices[i + 2] };
+
+		if (m_Meshes[0].primitiveTopology == PrimitiveTopology::TriangleStrip && i & 2 != 0)
+		{
+			std::swap(indc1, indc2);
+		}
+		//cach vertices
+		
+		//vertex_out
+		const Vertex_Out v0{ m_Meshes[0].vertices_out[indc0]};
+		const Vertex_Out v1{ m_Meshes[0].vertices_out[indc1]};
+		const Vertex_Out v2{ m_Meshes[0].vertices_out[indc2]};
+
+		//Vector2 for cross
+		const Vector2 vec0{v0.position.x, v0.position.y};
+		const Vector2 vec1{v1.position.x, v1.position.y};
+		const Vector2 vec2{v2.position.x, v2.position.y}; 
+
+		//vertices 2D
+		std::vector<Vector2> vertices{};
+		vertices.resize(3);
+		vertices[0] = vec0;
+		vertices[1] = vec1;
+		vertices[2] = vec2;
+		/*vertices.push_back(v0);
+		vertices.push_back(v1);
+		vertices.push_back(v2);*/
+
+		Vector2 topLeft{};
+		Vector2 bottomRight{};
+
+		BoundingBox(topLeft, bottomRight, vertices);
+
+		//RENDER LOGIC
+		for (int px{ static_cast<int>(topLeft.x) }; px < static_cast<int>(bottomRight.x); ++px)
+		{
+			for (int py{ static_cast<int>(topLeft.y) }; py < static_cast<int>(bottomRight.y); ++py)
+			{
+				ColorRGB finalColor{};
+				Vector2 currentPixel = { static_cast<float>(px) + 0.5f, static_cast<float>(py) + 0.5f };
+
+				float weight0 = 0, weight1 = 0, weight2 = 0;
+				float triangleSide0 = 0, triangleSide1 = 0, triangleSide2 = 0;
+				
+				float area{ Vector2::Cross((vec1 - vec0), (vec2 - vec0)) };
+
+				//calculate weights
+				weight0 = triangleSide0 = Vector2::Cross(vec2 - vec1, (currentPixel - vec1)) / area;
+				weight1 = triangleSide1 = Vector2::Cross(vec0 - vec2, (currentPixel - vec2)) / area;
+				weight2 = triangleSide2 = Vector2::Cross(vec1 - vec0, (currentPixel - vec0)) / area;
+
+				float totalTriangleWeight{ weight0 + weight1 + weight2 };
+				float invTotalTriangleWeight{ 1 / totalTriangleWeight };
+
+
+				weight0 *= invTotalTriangleWeight;
+				weight1 *= invTotalTriangleWeight;
+				weight2 *= invTotalTriangleWeight;
+
+
+				//interpolatedZ
+				//depth
+				const float interpolatedZ =
+					1 / ((1 / v0.position.z) * weight0 +
+						(1 / v1.position.z) * weight1 +
+						(1 / v2.position.z) * weight2);
+
+
+				//interpolatedW
+				const float interpolatedW =
+					1 / ((1 / v0.position.w) * weight0 +
+						 (1 / v1.position.w) * weight1 +
+						 (1 / v2.position.w) * weight2);
+
+				//isInTriangleCheck
+				if (triangleSide0 < 0) continue;
+				if (triangleSide1 < 0) continue;
+				if (triangleSide2 < 0) continue;
+
+				const Vector2 interpolatedUv =
+					((v0.uv / v0.position.w) * weight0
+						+ (v1.uv / v1.position.w) * weight1
+						+ (v2.uv / v2.position.w) * weight2) * interpolatedW;
+
+				//ColorRGB sampledColor = m_pSurfaceTexture->Sample(interpolatedUv);
+				//sample pixel color
+				switch (m_ColorOutput)
+				{
+				case 0:
+					//finalColor = { sampledColor };
+					break;
+				case 1:
+					finalColor = { interpolatedZ, 0.985f, 1.f };
+					break;
+				}
+
+
+				if (interpolatedZ < m_pDepthBufferPixels[(py * m_Width) + px])
+				{
+
+					m_pDepthBufferPixels[(py * m_Width) + px] = interpolatedZ;
+
+					//Update Color in Buffer
+					finalColor.MaxToOne();
+
+					m_pBackBufferPixels[px + (py * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
+						static_cast<uint8_t>(finalColor.r * 255),
+						static_cast<uint8_t>(finalColor.g * 255),
+						static_cast<uint8_t>(finalColor.b * 255));
+				}
+
+
+			}
+		}
+	}
+
+}
+
+void Renderer::render_W4_Part1()
+{
+	//clear global mesh variable
+	m_Meshes[0].vertices_out.clear();
+
+	VertexTransformationFunction(m_Meshes[0]);
+
+	int adder{};
+	if (m_Meshes[0].primitiveTopology == PrimitiveTopology::TriangleList)
+	{
+		adder = 3;
+	}
+	else
+	{
+		adder = 1;
+	}
+
+	//int count{};
+	for (int i{}; i < m_Meshes[0].vertices_out.size(); i += adder)
+	{
+
+		uint32_t indc0{ m_Meshes[0].indices[i] };
+		uint32_t indc1{ m_Meshes[0].indices[i + 1] };
+		uint32_t indc2{ m_Meshes[0].indices[i + 2] };
+
+		if (m_Meshes[0].primitiveTopology == PrimitiveTopology::TriangleStrip && i & 2 != 0)
+		{
+			std::swap(indc1, indc2);
+		}
+
+		//cach vertices
+		//vertex_out
+		Vertex_Out v0{ m_Meshes[0].vertices_out[indc0]};
+		Vertex_Out v1{ m_Meshes[0].vertices_out[indc1]};
+		Vertex_Out v2{ m_Meshes[0].vertices_out[indc2]};
+
+		//fustrum culling
+		if (FustrumCulling(v0.position, v1.position, v2.position)) continue;
+
+		//screenSpace
+		ToScreenSpace(v0.position, v1.position, v2.position);
+		
+		//Vector2 for cross
+		const Vector2 vec0{ v0.position.x, v0.position.y };
+		const Vector2 vec1{ v1.position.x, v1.position.y };
+		const Vector2 vec2{ v2.position.x, v2.position.y };
+
+		//vertices 2D
+		std::vector<Vector2> vertices{};
+		vertices.resize(3);
+		vertices[0] = vec0;
+		vertices[1] = vec1;
+		vertices[2] = vec2;
+
+		//boundingBox Optimization
+		Vector2 topLeft{};
+		Vector2 bottomRight{};
+
+		BoundingBox(topLeft, bottomRight, vertices);
+
+		//RENDER LOGIC
+		for (int px{ static_cast<int>(topLeft.x) }; px <= static_cast<int>(bottomRight.x); ++px)
+		{
+			for (int py{ static_cast<int>(topLeft.y) }; py <= static_cast<int>(bottomRight.y); ++py)
+			{
+				ColorRGB finalColor{};
+				Vector2 currentPixel = { static_cast<float>(px) + 0.5f, static_cast<float>(py) + 0.5f };
+
+				float weight0 = 0, weight1 = 0, weight2 = 0;
+				float triangleSide0 = 0, triangleSide1 = 0, triangleSide2 = 0;
+
+				float area{ Vector2::Cross((vec1 - vec0), (vec2 - vec0)) };
+
+				//calculate weights
+				weight0 = triangleSide0 = Vector2::Cross(vec2 - vec1, (currentPixel - vec1)) / area;
+				weight1 = triangleSide1 = Vector2::Cross(vec0 - vec2, (currentPixel - vec2)) / area;
+				weight2 = triangleSide2 = Vector2::Cross(vec1 - vec0, (currentPixel - vec0)) / area;
+
+				float totalTriangleWeight{ weight0 + weight1 + weight2 };
+				float invTotalTriangleWeight{ 1 / totalTriangleWeight };
+
+
+				weight0 *= invTotalTriangleWeight;
+				weight1 *= invTotalTriangleWeight;
+				weight2 *= invTotalTriangleWeight;
+
+				//isInTriangleCheck
+				if (triangleSide0 < 0) continue;
+				if (triangleSide1 < 0) continue;
+				if (triangleSide2 < 0) continue;
+
+
+
+				//depth
+				//interpolatedZ
+				const float interpolatedZ =
+					1 / ((1 / v0.position.z) * weight0 +
+						(1 / v1.position.z) * weight1 +
+						(1 / v2.position.z) * weight2);
+
+
+				if (interpolatedZ < m_pDepthBufferPixels[(py * m_Width) + px])
+				{ 
+					//interpolatedW
+					const float interpolatedW =
+						1 / ((1 / v0.position.w) * weight0 +
+							(1 / v1.position.w) * weight1 +
+							(1 / v2.position.w) * weight2);
+
+
+
+					//Position
+					const Vector4 pos = { ((v0.position * weight0) + (v1.position * weight1) + (v2.position * weight2)) * interpolatedW };
+
+
+					//uv
+					const Vector2 interpolatedUv =
+						((v0.uv / v0.position.w) * weight0
+							+ (v1.uv / v1.position.w) * weight1
+							+ (v2.uv / v2.position.w) * weight2) * interpolatedW;
+
+					//normal
+					const Vector3 normal{ ((v0.normal / (v0.position.w)) * weight0
+						+ (v1.normal / v1.position.w) * weight1
+						+ (v2.normal / v2.position.w) * weight2) * interpolatedW };
+
+					//tangent
+					const Vector3 tangent = { ((v0.tangent / v0.position.w) * weight0
+							+ (v1.tangent / v1.position.w) * weight1
+							+ (v2.tangent / v2.position.w) * weight2) * interpolatedW };
+
+
+
+
+					ColorRGB sampledColor = m_pDiffuseTexture->Sample(interpolatedUv);
+					//sample pixel color
+					switch (m_ColorOutput)
+					{
+					case 0:
+						finalColor = { sampledColor };
+						break;
+					case 1:
+						float remapedValue{ Remap(interpolatedZ, 0.985f, 1.f)};
+						//std::cout << interpolatedZ << "\n";
+						finalColor = { remapedValue, remapedValue, remapedValue };
+						break;
+					}
+				
+
+					m_pDepthBufferPixels[(py * m_Width) + px] = interpolatedZ;
+
+					//pixel shading
+					Vertex_Out finalPixel{ pos, finalColor, interpolatedUv, normal, tangent };
+					finalColor = PixelShading(finalPixel);
+
+					//Update Color in Buffer
+					finalColor.MaxToOne();
+
+					m_pBackBufferPixels[px + (py * m_Width)] = SDL_MapRGB(m_pBackBuffer->format,
+						static_cast<uint8_t>(finalColor.r * 255),
+						static_cast<uint8_t>(finalColor.g * 255),
+						static_cast<uint8_t>(finalColor.b * 255));
+				}
+
+
+			}
+		}
+	}
+
+}
+
+float Renderer::Remap(float value, float minValue, float maxValue) 
+{
+	//map to range[0,1]
+	return (value - minValue) / (maxValue - minValue);
+}
+
+bool Renderer::FustrumCulling(const Vector3 v0, const Vector3 v1, const Vector3 v2)
+{
+	if ((v0.x < -1 || v0.x > 1) ||
+		(v0.y < -1 || v0.y > 1) ||
+		(v0.z < 0 || v0.z > 1) ||
+		(v1.x < -1 || v1.x > 1) ||
+		(v1.y < -1 || v1.y > 1) ||
+		(v1.z < 0 || v1.z > 1) ||
+		(v2.x < -1 || v2.x > 1) ||
+		(v2.y < -1 || v2.y > 1) ||
+		(v2.z < 0 || v2.z > 1))
+	{
+		return true;
+	}
+	return false;
+}
+
+void Renderer::ToScreenSpace(Vector4& v0, Vector4& v1, Vector4& v2)
+{
+	//v0
+	v0.x = (v0.x + 1) / 2 * float(m_Width);
+	v0.y = (1 - v0.y) / 2 * float(m_Height);
+
+	//v1
+	v1.x = (v1.x + 1) / 2 * float(m_Width);
+	v1.y = (1 - v1.y) / 2 * float(m_Height);
+
+	//v2
+	v2.x = (v2.x + 1) / 2 * float(m_Width);
+	v2.y = (1- v2.y) / 2 * float(m_Height);
+}
 
 bool Renderer::SaveBufferToImage() const
 {
@@ -845,6 +1222,49 @@ void Renderer::BoundingBox(Vector2& topLeft, Vector2& bottomRight, std::vector<V
 	bottomRight.y = std::max(v[0].y, std::max(v[1].y, v[2].y));
 	if (bottomRight.y <= 0) bottomRight.y = 0;
 	if (bottomRight.y >= (m_Height - 1)) bottomRight.y = m_Height - 1;
+}
+
+void Renderer::RotateMesh(const Timer* timer)
+{
+	const auto yawAngle = (PI_DIV_4 * (timer->GetTotal()));
+
+	const Matrix rotMatrix{Matrix::CreateRotationY(yawAngle)};
+
+	m_Meshes[0].worldMatrix = rotMatrix;
+
+}
+
+ColorRGB Renderer::PixelShading(const Vertex_Out& v)
+{
+	Vector3 lightDirection = { .577f, -.577f, .577f };
+	const float lightIntensity{ 7.f };
+
+
+	Vector3 sampledNormal{v.normal};
+	Vector3 binormal = Vector3::Cross(v.normal, v.tangent);
+	Matrix tangentSpaceAxis = Matrix{ v.tangent, binormal.Normalized(), v.normal, Vector3::Zero};
+	sampledNormal = m_pNormalTexture->SampleNormal(v.uv);
+	sampledNormal = tangentSpaceAxis.TransformVector(sampledNormal);
+	sampledNormal = 2.f * sampledNormal - Vector3(1.f, 1.f, 1.f);
+	sampledNormal.Normalize();
+
+
+	//observedArea
+	float observedArea{ Vector3::Dot(sampledNormal, -lightDirection) };
+	if (observedArea < 0) observedArea = 0;
+	
+
+	//Diffuse
+	const ColorRGB lambertDiffuse{(lightIntensity * v.color) / float(M_PI) };
+
+
+
+	return ColorRGB(lambertDiffuse * observedArea);
+}
+
+void Renderer::ToggleColorOutput()
+{
+	m_ColorOutput = (m_ColorOutput + 1) % 2;
 }
 
 

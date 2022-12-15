@@ -73,7 +73,7 @@ namespace dae
 
 			projectionMatrix = Matrix::CreatePerspectiveFovLH(fov, aspectRatio, nearPlane, farPlane);
 
-			viewProjectionMatrix =  invViewMatrix * projectionMatrix;
+			viewProjectionMatrix =  viewMatrix * projectionMatrix;
 		}
 
 		void Update(Timer* pTimer)

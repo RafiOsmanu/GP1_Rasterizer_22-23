@@ -37,13 +37,16 @@ namespace dae
 		bool SaveBufferToImage() const;
 		SDL_Window* m_pWindow{};
 
+		void ToggleColorOutput();
 	private:
 
 		SDL_Surface* m_pFrontBuffer{ nullptr };
 		SDL_Surface* m_pBackBuffer{ nullptr };
 		uint32_t* m_pBackBufferPixels{};
 
-		std::unique_ptr<Texture> m_pSurfaceTexture{ nullptr };
+		std::unique_ptr<Texture> m_pDiffuseTexture{ nullptr };
+		std::unique_ptr<Texture> m_pNormalTexture{ nullptr };
+		
 
 		float* m_pDepthBufferPixels{};
 
@@ -54,6 +57,22 @@ namespace dae
 		std::vector<Vector3> m_Veritces_ScreenSpace;
 		//std::vector<Vertex> m_Veritces_world;
 		float m_AspectRatio;
+		int m_ColorOutput{0};
+
+		//triangle worldSpace
+		std::vector<Mesh> m_Meshes =
+		{
+			Mesh
+			{
+				{
+				},
+				{
+				},
+			PrimitiveTopology::TriangleList
+			}
+		};
+
+		bool m_IsMeshLoadedIn;
 		
 
 		//Function that transforms the vertices from the mesh from World space to Screen space
@@ -68,8 +87,18 @@ namespace dae
 		void render_W2_Part1();
 
 		void render_W3_Part1();
+		void render_W3_Part2();
+		void render_W4_Part1();
+
+		float Remap(float value, float minValue, float maxValue);
+		bool FustrumCulling(const Vector3 v0, const Vector3 v1, const Vector3 v2);
+		void ToScreenSpace(Vector4& v0, Vector4& v1, Vector4& v2);
 
 		void BoundingBox(Vector2& topLeft, Vector2& bottomRight, std::vector<Vector2> v);
+		void RotateMesh(const Timer* timer);
+
+		ColorRGB PixelShading(const Vertex_Out& v);
+
 		
 
 	};

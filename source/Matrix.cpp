@@ -167,7 +167,7 @@ namespace dae {
 			{0, 0, zf/(zf - zn), 1},
 			{0, 0, -(zf * zn)/(zf - zn), 0}
 		};
-		return {};
+		return { projection };
 	}
 
 	Vector3 Matrix::GetAxisX() const
