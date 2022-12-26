@@ -29,8 +29,7 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	m_IsMeshLoadedIn = false;
 
 	//Initialize Camera
-	m_Camera.Initialize(45.f, { .0f, 0.f, 0.f }, m_AspectRatio);
-
+	m_Camera.Initialize(60.f, { .0f, 5.f,-30.f }, m_AspectRatio);
 
 	m_CurrentRenderState = RenderState::combined;
 
@@ -44,9 +43,9 @@ Renderer::Renderer(SDL_Window* pWindow) :
 	m_pSpecularTexture = Texture::LoadFromFile("Resources/vehicle_specular.png");
 
 	Utils::ParseOBJ("Resources/vehicle.obj", m_Meshes[0].vertices, m_Meshes[0].indices);
+	
 
-	
-	
+
 };
 
 Renderer::~Renderer()
@@ -58,11 +57,7 @@ void Renderer::Update(Timer* pTimer)
 {
 	m_Camera.Update(pTimer);
 
-	if (m_RotationToggle)
-	{
-		m_Meshes[0].RotateMesh(pTimer);
-		m_Meshes[0].Translate({ 0.f, 0.f, 50.f });
-	}
+	if(m_RotationToggle) RotateMesh(pTimer);
 }
 
 void Renderer::Render()
@@ -118,9 +113,8 @@ void Renderer::VertexTransformationFunction(Mesh& mesh) const
 			vertexOut.uv,
 			mesh.worldMatrix.TransformVector(vertexOut.normal).Normalized(),
 			mesh.worldMatrix.TransformVector(vertexOut.tangent).Normalized(),
-			(mesh.worldMatrix.TransformVector(vertexOut.position) - m_Camera.origin).Normalized()
+			vertexOut.position
 		};
-
 
 		//perspective divide
 		newVertexOut.position.x /= newVertexOut.position.w;
@@ -1117,19 +1111,19 @@ void Renderer::render_W4_Part1()
 							+ (v2.tangent / v2.position.w) * weight2) * interpolatedW };
 
 					// viewDirection
-						const Vector3 viewDirection = { (((v0.viewDirection / v0.position.w) * weight0
+						const Vector3 viewDirection = { ((v0.viewDirection / v0.position.w) * weight0
 								+ (v1.viewDirection / v1.position.w) * weight1
-								+ (v2.viewDirection / v2.position.w) * weight2) * interpolatedW)};
+								+ (v2.viewDirection / v2.position.w) * weight2) * interpolatedW };
 
 
 
 
-					//ColorRGB sampledColor = m_pDiffuseTexture->Sample(interpolatedUv);
+					ColorRGB sampledColor = m_pDiffuseTexture->Sample(interpolatedUv);
 					//sample pixel color
 					switch (m_ColorOutput)
 					{
 					case 0:
-						//finalColor = { sampledColor };
+						finalColor = { sampledColor };
 						break;
 					case 1:
 						float remapedValue{ Remap(interpolatedZ, 0.985f, 1.f)};
@@ -1232,15 +1226,21 @@ void Renderer::BoundingBox(Vector2& topLeft, Vector2& bottomRight, std::vector<V
 	if (bottomRight.y >= (m_Height - 1)) bottomRight.y = static_cast<float>(m_Height) - 1;
 }
 
+void Renderer::RotateMesh(const Timer* timer)
+{
+	const auto yawAngle = (PI_DIV_4 * (timer->GetTotal()));
 
+	const Matrix rotMatrix{Matrix::CreateRotationY(yawAngle)};
+
+	m_Meshes[0].worldMatrix = rotMatrix;
+
+}
 
 ColorRGB Renderer::PixelShading(const Vertex_Out& v)
 {
 	Vector3 lightDirection = { .577f, -.577f, .577f };
 	const float lightIntensity{ 7.f };
 	ColorRGB ambient{ 0.025f, 0.025f , 0.025f };
-	//diffuse reflectivity
-	const float kd{1.f};
 
 	Vector3 sampledNormal{v.normal};
 	
@@ -1262,20 +1262,19 @@ ColorRGB Renderer::PixelShading(const Vertex_Out& v)
 	if (observedArea < 0) observedArea = 0;
 
 	//Diffuse
-	const ColorRGB lambertDiffuse{ (kd * m_pDiffuseTexture->Sample(v.uv)) / float(M_PI) };
+	const ColorRGB lambertDiffuse{ (1 * v.color) / float(M_PI) };
 
 	//phong 
 	const float shininess{ 25.f };
 	const ColorRGB specularColor{ m_pSpecularTexture->Sample(v.uv) };
 	const float phongExp{ m_pGlossTexture->SampleNormal(v.uv).x * shininess };
 
-	const Vector3 reflect{ Vector3::Reflect(-lightDirection, sampledNormal) };
+	const Vector3 reflect{ Vector3::Reflect(-lightDirection, v.normal) };
 	float cosAngle{ Vector3::Dot(reflect, v.viewDirection) };
 	if (cosAngle < 0.f) cosAngle = 0.f;
 
-	const float specReflection{ kd * powf(cosAngle, phongExp) };
+	const float specReflection{ 1 * powf(cosAngle, phongExp) };
 	const ColorRGB phong{ specReflection * specularColor };
-
 
 	switch (m_CurrentRenderState)
 	{
@@ -1285,7 +1284,7 @@ ColorRGB Renderer::PixelShading(const Vertex_Out& v)
 
 	case dae::Renderer::RenderState::lambert:
 
-		return lightIntensity * lambertDiffuse * observedArea;
+		return lambertDiffuse * observedArea;
 
 	case dae::Renderer::RenderState::phong:
 
@@ -1293,7 +1292,7 @@ ColorRGB Renderer::PixelShading(const Vertex_Out& v)
 
 	case dae::Renderer::RenderState::combined:
 
-		return ColorRGB(lightIntensity * lambertDiffuse * observedArea + ambient + phong);
+		return ColorRGB(lightIntensity * lambertDiffuse + ambient + phong) * observedArea ;
 	}
 	return ColorRGB();
 }

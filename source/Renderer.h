@@ -38,6 +38,9 @@ namespace dae
 		SDL_Window* m_pWindow{};
 
 		void ToggleColorOutput();
+		void ToggleRenderOutput();
+		void ToggleNormalMap();
+		void ToggleRotation();
 	private:
 
 		SDL_Surface* m_pFrontBuffer{ nullptr };
@@ -46,6 +49,8 @@ namespace dae
 
 		std::unique_ptr<Texture> m_pDiffuseTexture{ nullptr };
 		std::unique_ptr<Texture> m_pNormalTexture{ nullptr };
+		std::unique_ptr<Texture> m_pGlossTexture{ nullptr };
+		std::unique_ptr<Texture> m_pSpecularTexture{ nullptr };
 		
 
 		float* m_pDepthBufferPixels{};
@@ -58,6 +63,8 @@ namespace dae
 		//std::vector<Vertex> m_Veritces_world;
 		float m_AspectRatio;
 		int m_ColorOutput{0};
+		bool m_NormalMapToggle{true};
+		bool m_RotationToggle{true};
 
 		//triangle worldSpace
 		std::vector<Mesh> m_Meshes =
@@ -95,9 +102,17 @@ namespace dae
 		void ToScreenSpace(Vector4& v0, Vector4& v1, Vector4& v2);
 
 		void BoundingBox(Vector2& topLeft, Vector2& bottomRight, std::vector<Vector2> v);
-		void RotateMesh(const Timer* timer);
+		
 
 		ColorRGB PixelShading(const Vertex_Out& v);
+
+		enum class RenderState
+		{
+			observedArea, lambert, phong, combined
+		};
+
+		RenderState m_CurrentRenderState;
+
 
 		
 
